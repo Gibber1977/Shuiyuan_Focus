@@ -1,7 +1,8 @@
+// 修复了计时功能，每天凌晨四点重置
 // ==UserScript==
 // @name         水源戒手
 // @namespace    https://shuiyuan.sjtu.edu.cn/
-// @version      1.4
+// @version      1.4.1
 // @description  统计特定网站的浏览时间，提供可自定义的中央提醒和快捷操作
 // @match        https://shuiyuan.sjtu.edu.cn/*
 // @match        https://shuiyuan.sjtu.edu.cn/*
@@ -27,7 +28,8 @@
         popupInterval: -1,
         popupEnabled: true,
         nextPopupTime: 0,
-        suppressDuration: 0
+        suppressDuration: 0,
+        lastResetTime: Date.now()
     };
 
     // 全局变量
@@ -276,12 +278,14 @@
     function updateTime() {
         if (isActive) {
             const now = Date.now();
-            totalTime += (now - startTime) / 1000;
-            GM_setValue('totalTime', totalTime);
+            // 检查是否需要重置
+            if (!checkAndResetTime()) {
+                totalTime += (now - startTime) / 1000;
+                GM_setValue('totalTime', totalTime);
+            }
             startTime = now;
         }
     }
-
     // 重置活动状态
     function resetActivity() {
         if (!isActive) {
@@ -424,17 +428,42 @@
         });
     }
 
-
+    // 重置函数
+    function checkAndResetTime() {
+        const now = new Date();
+        const lastResetTime = new Date(config.lastResetTime);
+        
+        // 获取今天的凌晨4点时间
+        const today4AM = new Date(now);
+        today4AM.setHours(4, 0, 0, 0);
+        
+        // 获取昨天的凌晨4点时间
+        const yesterday4AM = new Date(today4AM);
+        yesterday4AM.setDate(yesterday4AM.getDate() - 1);
+        
+        // 如果上次重置时间在昨天4点之前，且现在时间已过今天4点
+        if (lastResetTime < yesterday4AM && now >= today4AM) {
+            totalTime = 0;
+            GM_setValue('totalTime', 0);
+            config.lastResetTime = now.getTime();
+            updateConfig();
+            return true;
+        }
+        return false;
+    }
     // 初始化
     function initialize() {
         createWaterSourceIcon();
+        
+        // 检查是否需要重置时间
+        checkAndResetTime();
 
         // 检查是否需要显示初始弹窗
         if (config.nextPopupTime <= Date.now()) {
-            // 延迟一下以确保页面加载完成
             setTimeout(() => createPopup(false), 1000);
         }
     }
+
     initialize();
 
     // 定时检查是否需要弹窗
@@ -443,6 +472,11 @@
             createPopup(false);
         }
     }, 60000);
+
+    // 添加定时检查重置
+    setInterval(() => {
+        checkAndResetTime();
+    }, 60000); // 每分钟检查一次
 
     // 全局事件监听
     window.addEventListener('beforeunload', updateTime);
